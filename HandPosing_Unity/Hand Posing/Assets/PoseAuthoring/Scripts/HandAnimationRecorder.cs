@@ -10,14 +10,12 @@ using Oculus.Platform;
 
 namespace PoseAuthoring
 {
-    public class HandPoseRecorder : MonoBehaviour
+    public class HandAnimationRecorder : MonoBehaviour
     {
         // Hand Animator
         [SerializeField]
         public HandProvider handProvider;
 
-        private List<Dictionary<string, RVector>> handVectorsCollection;
-        private List<HandGhost> frames = new List<HandGhost>();
         public float InitialFrameRate;
         public float targetFrameRate = 60f;
         public bool LeftHand = true;
@@ -27,8 +25,6 @@ namespace PoseAuthoring
 
         [SerializeField]
         private HandPuppet puppetHand;
-        [SerializeField]
-        private Grabber grabber;
 
         [SerializeField]
         private KeyCode recordKey = KeyCode.Space;
@@ -38,14 +34,9 @@ namespace PoseAuthoring
         private HandGhost AnimationGhost;
         private System.Diagnostics.Stopwatch timer = new System.Diagnostics.Stopwatch();
         private bool Recording;
-        private HandGhost previousGhost;
 
-        private List<HandSnapPose> handSnapPoses = new List<HandSnapPose>();
+        private List<HandSnapPose> ghosts = new List<HandSnapPose>();
 
-        //private Enum TrackMechanism
-        //{
-        //    ghost, pose
-        //}
         private void Start()
         {
             InitialFrameRate = UnityEngine.Application.targetFrameRate;
@@ -62,11 +53,11 @@ namespace PoseAuthoring
                 {
                     Recording = false;
                     timer.Stop();
-                    Debug.Log(string.Format("{0} frames in {2} seconds =  captured at {1} fps", frames.Count, frames.Count / timer.Elapsed.TotalSeconds, timer.Elapsed.TotalSeconds));
-                    if (frames.Count > 0)
+                    Debug.Log(string.Format("{0} frames in {2} seconds =  captured at {1} fps", ghosts.Count, ghosts.Count / timer.Elapsed.TotalSeconds, timer.Elapsed.TotalSeconds));
+                    if (ghosts.Count > 0)
                     {
-                        GenerateAnimations(frames, (float)(frames.Count / timer.Elapsed.TotalSeconds));
-                        frames = new List<HandGhost>();
+                        GenerateAnimations((float)(ghosts.Count / timer.Elapsed.TotalSeconds));
+                        ghosts = new List<HandSnapPose>();
                     }
                 }
                 else
@@ -76,24 +67,36 @@ namespace PoseAuthoring
                     RecordPose();
                 }
             }
-            if (Input.GetKeyDown(deleteKey) && previousGhost != null)
+            if (Input.GetKeyDown(deleteKey) && AnimationGhost != null)
             {
-                foreach (var g in frames)
-                {
-                    DestroyImmediate(g.gameObject);
-                }
+
                 lastAnimation = null;
-                DestroyImmediate(previousGhost);
-                frames = new List<HandGhost>();
+                DestroyImmediate(AnimationGhost);
+                ghosts = new List<HandSnapPose>();
             }
 
             if (lastAnimation != null && Input.GetKeyDown(replayKey))
             {
                 lastAnimation.Play(clipName);
             }
-            HighlightNearestPose();
         }
 
+        private void AddAnimationPose(HandPuppet puppet)
+        {
+            HandSnapPose pose = puppet.CurrentPoseVisual(this.transform);
+            if (AnimationGhost == null)
+            {
+                HandGhost ghost = Instantiate(handProvider.GetHand(pose.handeness), this.transform.position, this.transform.rotation);
+                ghost.SetPose(pose, ghost.transform);
+                ghosts.Add(puppet.CurrentPoseVisual(this.transform));
+                AnimationGhost = ghost;
+            }
+            else
+            {
+                AnimationGhost.SetPose(pose, AnimationGhost.transform);
+                ghosts.Add(pose);
+            }
+        }
         public struct RVector
         {
             public float x;
@@ -109,9 +112,9 @@ namespace PoseAuthoring
         }
 
 
-        private void GenerateAnimations(List<HandGhost> ghosts, float framerate)
+        private void GenerateAnimations(float framerate)
         {
-            var initalGhost = ghosts[0].gameObject;
+            var initalGhost = AnimationGhost.gameObject;
             var position = initalGhost.transform.position;
             Animation anim = initalGhost.GetComponent<Animation>();
             if (anim == null)
@@ -120,31 +123,30 @@ namespace PoseAuthoring
             }
             AnimationClip clip = new AnimationClip
             {
+                name = "clip0",
                 legacy = true
             };
 
             var transforms = new List<Dictionary<string, Transform>>();
-            foreach (var g in ghosts)
+            var tempGhosts = new List<HandGhost>();
+            foreach (var pose in ghosts)
             {
-                transforms.Add(g.GetComponentsInChildren<Transform>().ToDictionary(x => x.name, x => x));
+                HandGhost ghost = Instantiate(handProvider.GetHand(pose.handeness), AnimationGhost.transform.position, AnimationGhost.transform.rotation);
+                ghost.SetPose(pose, ghost.transform);
+                tempGhosts.Add(ghost);
+                transforms.Add(ghost.GetComponentsInChildren<Transform>().ToDictionary(x => x.name, x => x));
             }
-            BuildKeyframes(clip, transforms, framerate);
 
-            foreach (var g in ghosts)
+            BuildKeyframes(clip, transforms, framerate);
+            foreach(var g in tempGhosts)
             {
-                if (ghosts.IndexOf(g) != 0)
-                {
-                    UnityEngine.Object.DestroyImmediate(g.gameObject);
-                }
+                DestroyImmediate(g.gameObject);
             }
-            if (anim.clip == null)
-            {
-                anim.clip = clip;
-                anim.AddClip(clip, clip.name);
-                anim.Play(clip.name);
-                lastAnimation = anim;
-                clipName = clip.name;
-            }
+            anim.clip = clip;
+            anim.AddClip(clip, clip.name);
+            anim.Play(clip.name);
+            clipName = clip.name;
+            lastAnimation = anim;
         }
 
 
@@ -215,61 +217,13 @@ namespace PoseAuthoring
             return string.Join("/", pths);
         }
 
-        private void HighlightNearestPose()
-        {
-            var grabbable = grabber.FindClosestGrabbable().Item1;
-
-            if (grabbable != null && grabbable.Snappable != null)
-            {
-                HandSnapPose userPose = this.puppetHand.CurrentPoseTracked(grabbable.Snappable.transform);
-                HandGhost ghost = grabbable.Snappable.FindNearsetGhost(userPose, out float score, out var bestPose);
-                if (ghost != previousGhost)
-                {
-                    previousGhost?.Highlight(false);
-                    previousGhost = ghost;
-                }
-                ghost?.Highlight(score);
-            }
-            else if (previousGhost != null)
-            {
-                previousGhost.Highlight(false);
-                previousGhost = null;
-            }
-        }
-
         public void RecordPose()
         {
-            Grabbable grabbable = grabber.FindClosestGrabbable().Item1;
-            if (grabbable == null)
-            {
-                AddAnimationPose(puppetHand);
-                Time.captureFramerate = UnityEngine.Application.targetFrameRate;
-                Recording = true;
-            }
-            else
-            {
-                grabbable?.Snappable?.AddPose(puppetHand);
-            }
+            AddAnimationPose(puppetHand);
+            Time.captureFramerate = UnityEngine.Application.targetFrameRate;
+            Recording = true;
         }
 
-        private void AddAnimationPose(HandPuppet puppet)
-        {
-            if (AnimationGhost == null)
-            {
-                HandSnapPose pose = puppet.CurrentPoseVisual(this.transform);
-                HandGhost ghost = Instantiate(handProvider.GetHand(pose.handeness), this.transform.position, this.transform.rotation);
-                ghost.SetPose(pose, ghost.transform);
-                handSnapPoses.Add(puppet.CurrentPoseTracked(this.transform));
-                AnimationGhost = ghost;
-            }
-            else
-            {
-                HandSnapPose pose = puppet.CurrentPoseVisual(this.transform);
-                HandGhost ghost = Instantiate(handProvider.GetHand(pose.handeness), this.transform.position, this.transform.rotation);
-                ghost.SetPose(pose, ghost.transform);
-                frames.Add(ghost);
-            }
-        }
 
 
         public class AnimationVectors
