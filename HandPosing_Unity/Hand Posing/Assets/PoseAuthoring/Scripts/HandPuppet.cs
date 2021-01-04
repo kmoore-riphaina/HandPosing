@@ -8,7 +8,7 @@ namespace PoseAuthoring
     public class HandPuppet : MonoBehaviour
     {
         [SerializeField]
-        private OVRSkeleton trackedHand;
+        public OVRSkeleton trackedHand;
         [SerializeField]
         private Transform handAnchor;
         [SerializeField]

@@ -894,11 +894,18 @@ MonoBehaviour:
   m_GameObject: {fileID: 351404503956951377}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1c58dbc119ebc564c95d34c9d9e55465, type: 3}
+  m_Script: {fileID: 11500000, guid: 6c6298b753193fb4a83a3474e1b90271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  puppetHand: {fileID: 1387190361880471772}
-  grabber: {fileID: 4635681503502107842}
+  handProvider: {fileID: 0}
+  HandTrackSelection: 0
+  ShowInBox: 1
+  previewBox: {fileID: 0}
+  vectorAnalyser: {fileID: 0}
+  puppetHand: {fileID: 0}
+  lastAnimation: {fileID: 0}
+  recordKey: 32
+  clipName: 
 --- !u!114 &6419182328721095271
 MonoBehaviour:
   m_ObjectHideFlags: 0
